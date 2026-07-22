@@ -1,0 +1,24 @@
+{
+  "name": "code-agent",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A code CLI agent built from scratch, following Claude Code's architecture, using Azure AI Foundry for model inference.",
+  "scripts": {
+    "smoke": "tsx src/smoke.ts",
+    "start": "tsx src/cli.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "openai": "^4.68.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
