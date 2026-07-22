@@ -5,7 +5,7 @@
  */
 
 import * as readline from "readline";
-import { query } from "./core/query.js";
+import { loop } from "./core/loop.js";
 import { STATE } from "./core/state.js";
 import { approveTool } from "./core/permissions.js";
 import * as tools from "./tools/index.js";
@@ -49,7 +49,7 @@ async function runAgent(userMessage: string) {
   let fullText = "";
 
   try {
-    for await (const event of query({
+    for await (const event of loop({
       userMessage,
       onApprovalRequest: async (tool, _input) => {
         return await promptApproval(tool.name);
@@ -69,7 +69,7 @@ async function runAgent(userMessage: string) {
           console.log(`\n❌ Error: ${event.result.error}`);
         }
       } else if (event.type === "turn") {
-        // console.log(`\n--- Turn ${event.turn} ---`);
+        console.log(`\n--- Turn ${event.turn} ---`);
       }
     }
   } catch (err) {

@@ -41,10 +41,10 @@ export type QueryYield =
  *     // handle event
  *   }
  */
-export async function* query(options: QueryOptions): AsyncGenerator<QueryYield, Terminal, unknown> {
+export async function* loop(options: QueryOptions): AsyncGenerator<QueryYield, Terminal, unknown> {
   const { userMessage, maxTurns = STATE.maxTurns, permissionMode = "default", onApprovalRequest, onTextChunk } = options;
 
-  const { client, model } = getModelClient();
+  const { client, model } = await getModelClient();
   STATE.reset();
 
   // Build message history - use OpenAI message format

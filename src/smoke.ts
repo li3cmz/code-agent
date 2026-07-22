@@ -38,7 +38,8 @@ async function main(): Promise<void> {
   }
 
   console.log(`[smoke] Calling model "${cfg.model}" at ${cfg.endpoint} ...`);
-  const { client, model } = getModelClient(cfg);
+  console.log(`[smoke] Auth type: ${cfg.authType}`);
+  const { client, model } = await getModelClient(cfg);
 
   const response = await client.chat.completions.create({
     model,

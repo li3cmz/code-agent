@@ -15,7 +15,7 @@
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | Language / runtime | **TypeScript + Node.js** | Same stack as Claude Code; richest terminal/async ecosystem; `openai` SDK is GA. |
-| Model access | **Direct model inference** (Chat Completions / Responses API) via the `openai` npm package pointed at a Foundry endpoint | The local tool-execution loop must run on the user's machine regardless; Agent Service adds a 10-min run timeout, Entra-ID-only auth, and Azure lock-in with no benefit for a single-user local CLI. |
+| Model access | **Direct model inference** (Chat Completions / Responses API) via the `openai` npm package pointed at a Foundry endpoint | Current: MVP uses direct model deployment. Will migrate to **Azure AI Foundry Agent** in Stage 9 for built-in tracing, tool execution, and memory. Direct inference keeps full control; Agent simplifies tool/trace implementation. |
 | Provider abstraction | **Provider factory** (`getModelClient()`) | Swap Foundry direct ↔ Agent Service ↔ local model by changing one file, per Claude Code's `getAnthropicClient()` pattern. |
 | Auth (MVP) | **API key** in `.env` | Simplest; direct inference supports it. Entra ID / `DefaultAzureCredential` is a later option behind the same factory. |
 | Platform | **Windows** first (cross-platform friendly where cheap) | User's environment. Shell tool defaults to PowerShell on Windows. |
@@ -39,7 +39,7 @@ outlook.com account once an Azure subscription + `Azure AI User` RBAC exists).
 | 5 | Memory | `src/core/memory.ts` | Scan `AGENTS.md` / `CLAUDE.md` up the tree at startup; inject relevant content into the system prompt. |
 | 6 | Hooks | `src/core/hooks.ts` | Lifecycle interceptors: `PreToolUse` (can deny), `PostToolUse`, `UserPromptSubmit`, `Stop`. |
 | + | Permissions | `src/core/permissions.ts` | Modes: `default` / `plan` / `acceptEdits` / `dontAsk` / `bypass`. Resolves before each tool runs. Sub-agents `bubble` up. |
-| + | Provider | `src/core/provider.ts` | `getModelClient()` factory. MVP: Foundry direct + API key. |
+| + | Provider | `src/core/provider.ts` | `getModelClient()` factory. MVP: Foundry direct + API key. Stage 9: Add Foundry Agent option. |
 
 ---
 
@@ -111,6 +111,7 @@ code-agent/
 > | 7 Hooks | 12 Extensibility (Skills & Hooks) | /ch12-extensibility/ |
 > | (CLI/UX polish, any stage) | 13 Terminal UI, 14 Input/Interaction | /ch13-terminal-ui/ · /ch14-input-interaction/ |
 > | 8 (opt) Agent Service + Entra ID | 4 API Layer (multi-provider), 15 MCP | /ch04-api-layer/ · /ch15-mcp/ |
+| 9 (DEFERRED) Migrate to Foundry Agent | 4 API Layer, 8 Sub-Agents, 15 MCP | /ch04-api-layer/ · /ch08-sub-agents/ · /ch15-mcp/ |
 >
 > Base URL for all paths above: `https://claude-code-from-source.com`
 
@@ -188,6 +189,27 @@ and a **Checkpoint** (what to record in the Progress Table when done).
 - Only if managed web search / code interpreter / RAG / publishing is needed.
 - Add an alternate provider behind `getModelClient()` using `@azure/ai-projects` + `DefaultAzureCredential`; handle the function-call round-trip + 10-min run window.
 
+### Stage 9 — Migrate to Azure AI Foundry Agent
+- **CC ref:** ch04 API Layer (multi-provider client), ch08 Sub-Agents (agent patterns), ch15 MCP.
+- **Goal:** Migrate from direct model deployment to Azure AI Foundry Agent for built-in tracing, tool execution, and memory.
+- **Status:** **DEFERRED** — Will implement after all other stages are complete.
+- **Rationale:** Currently using direct model deployment (Stage 0-1). Will migrate to Foundry Agent later for:
+  - ✅ Built-in tracing (no need to implement custom tracing)
+  - ✅ Built-in tool execution framework
+  - ✅ Built-in conversation memory
+  - ✅ Built-in RAG integration (Azure AI Search)
+  - ✅ Azure AI Foundry portal monitoring
+- **Files:** `src/core/provider-foundry-agent.ts` (new), updates to `src/core/provider.ts`.
+- **Tasks:**
+  - Research Azure AI Foundry Agent SDK (`@azure/ai-projects`).
+  - Create a new provider factory option for Foundry Agent.
+  - Migrate tool definitions to Foundry Agent tool schema format.
+  - Enable built-in tracing via Foundry portal.
+  - Update CLI to support both direct deployment and Agent modes.
+  - Document migration steps and differences in README.
+- **Acceptance:** Agent works via Foundry Agent; traces visible in Foundry portal; falls back to direct deployment if Agent unavailable.
+- **Checkpoint:** Provider factory supports both modes; migration documented.
+
 ---
 
 ## 5. Progress Table  ← UPDATE THIS AS THE FIRST/LAST THING EACH SESSION
@@ -196,8 +218,8 @@ Status values: `TODO` · `IN_PROGRESS` · `DONE` · `BLOCKED`
 
 | Stage | Description | Status | Last updated | Notes |
 |-------|-------------|--------|--------------|-------|
-| 0 | Scaffold + provider smoke test | DONE | 2026-07-22 | Scaffold DONE: package.json/tsconfig/.gitignore/.env(.example), src/core/{provider,messages}.ts, src/smoke.ts. Provider factory mirrors getAnthropicClient() pattern; Terminal union in messages.ts. |
-| 1 | Query loop + tools + CLI (MVP) | IN_PROGRESS | 2026-07-22 | Implementing: Tool interface, query loop, 4 tools, basic permissions, CLI |
+| 0 | Scaffold + provider smoke test | DONE | 2026-07-22 | Scaffold DONE: package.json/tsconfig/.gitignore/.env(.example), src/core/{provider,messages}.ts, src/smoke.ts. Provider factory mirrors getAnthropicClient() pattern; Terminal union in messages.ts. Azure config: endpoint=https://huanglsh666-7029-resource.cognitiveservices.azure.com/openai/v1/, model=gpt-5-mini. Added zod-to-json-schema for tool schema conversion. |
+| 1 | Query loop + tools + CLI (MVP) | DONE | 2026-07-22 | Complete: query.ts async generator, tool.ts registry/executor, 4 tools (readFile/writeEditFile/shell/grep), permissions.ts (modes + session approvals), cli.ts REPL, README.md. Design aligns with CC ch05/ch06/ch01. |
 | 2 | Permission hardening | TODO | 2026-07-21 | |
 | 3 | glob + web_fetch + concurrency | TODO | 2026-07-21 | |
 | 4 | Two-layer state + cost | TODO | 2026-07-21 | |
@@ -205,6 +227,7 @@ Status values: `TODO` · `IN_PROGRESS` · `DONE` · `BLOCKED`
 | 6 | Memory (AGENTS.md/CLAUDE.md) | TODO | 2026-07-21 | |
 | 7 | Hooks | TODO | 2026-07-21 | |
 | 8 | (Optional) Agent Service + Entra ID | TODO | 2026-07-21 | Deferred. |
+| 9 | Migrate to Azure AI Foundry Agent | TODO | 2026-07-22 | DEFERRED - Will implement after all other stages complete. Using direct model deployment currently. |
 
 ---
 
@@ -219,9 +242,9 @@ Status values: `TODO` · `IN_PROGRESS` · `DONE` · `BLOCKED`
    update **Last updated**, and jot the next concrete action in **Notes**.
 
 ### Secrets / config needed to run
-- `AZURE_FOUNDRY_ENDPOINT` — Foundry project/model endpoint (e.g. `https://<res>.openai.azure.com/openai/v1/`)
+- `AZURE_FOUNDRY_ENDPOINT` — Foundry project/model endpoint (e.g. `https://<res>.cognitiveservices.azure.com/openai/v1/`)
 - `AZURE_FOUNDRY_API_KEY` — from the Foundry portal
-- `MODEL` — deployment/model name (e.g. `gpt-4.1`)
+- `MODEL` — deployment/model name (e.g. `gpt-5-mini`)
 - Put these in `.env` (git-ignored). `.env.example` documents them.
 
 ### Commands (filled in as stages land)
@@ -238,3 +261,25 @@ Status values: `TODO` · `IN_PROGRESS` · `DONE` · `BLOCKED`
 - Should the agent be restricted to the project dir by default (path sandboxing)?
   → **DECIDED: sandbox ON by default** (tools reject paths resolving outside the project root),
   with an override/approval to allow outside access. Implement in Stage 1 (tools) + Stage 2 (permissions).
+
+---
+
+## 8. Issues to Fix (recorded during Azure setup)
+
+### Issue 1: Tool argument passing fails
+- **Symptom:** When the model calls a tool (e.g., `readFile`), the tool receives `undefined` for required parameters (e.g., `path`).
+- **Error:** `Invalid type: expected string, received undefined` from Zod validation.
+- **Root cause:** The model's function call arguments are not being correctly parsed and passed to the tool in `loop.ts`.
+- **Location:** `src/core/loop.ts` - the tool call arguments parsing logic.
+- **Status:** TODO - needs fixing
+
+### Issue 2: Tool message format for Azure OpenAI
+- **Symptom:** Error: `messages with role 'tool' must be a response to a preceding message with 'tool_calls'`
+- **Root cause:** The message format when sending tool results back to the model may not match Azure OpenAI's requirements.
+- **Location:** `src/core/loop.ts` - the message history building logic after tool execution.
+- **Status:** TODO - needs fixing
+
+### Issue 3: Model selection in Azure
+- **Symptom:** Original request was for `gpt-4`, but `gpt-4o` and `gpt-4.1` were deprecated or not available.
+- **Solution applied:** Using `gpt-5-mini` which was already deployed.
+- **Status:** WORKAROUND applied - gpt-5-mini is working

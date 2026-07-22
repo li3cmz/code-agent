@@ -11,9 +11,12 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@azure/identity": "^4.13.1",
+    "@azure/mcp": "^2.0.5",
     "dotenv": "^16.4.5",
     "openai": "^4.68.0",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "zod-to-json-schema": "^3.25.2"
   },
   "devDependencies": {
     "@types/node": "^22.7.0",

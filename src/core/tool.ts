@@ -9,6 +9,7 @@
  */
 
 import { z } from "zod";
+import { zodToJsonSchema } from "zod-to-json-schema";
 
 /** Input schema for a tool — zod-validated before execute(). */
 export type ToolInput<T extends z.ZodSchema> = z.infer<T>;
@@ -57,11 +58,11 @@ class ToolRegistry {
   }
 
   /** List all tool names and their descriptions (for system prompt). */
-  getManifest(): { name: string; description: string; input_schema: unknown }[] {
+  getManifest(): { name: string; description: string; input_schema: Record<string, unknown> }[] {
     return this.getAll().map((t) => ({
       name: t.name,
       description: t.description,
-      input_schema: t.inputSchema,
+      input_schema: zodToJsonSchema(t.inputSchema, { target: "openApi3" }) as Record<string, unknown>,
     }));
   }
 }
