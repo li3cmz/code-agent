@@ -31,8 +31,30 @@ Or run with `npx tsx src/cli.ts`.
 ## Available Commands
 
 - `:quit` or `:exit` — Exit the CLI
-- `:reset` — Reset the session
+- `:reset` — Reset the session (clears mode and approvals)
 - `:plan` — Enable plan mode (read-only, blocks all mutating tools)
+- `:default` — Switch to default mode (prompts for mutations)
+- `:accept-edits` — Auto-approve file edits, prompt for shell commands
+- `:yes` — Auto-approve all tools (dontAsk mode)
+- `:status` — Show current mode and approved tools
+- `:revoke [tool]` — Revoke approval for a tool (or all if no argument)
+- `:help` or `:?` — Show available commands
+
+## Permission Modes
+
+| Mode | Read Tools | writeEditFile | shell | Session Approval |
+|------|------------|---------------|-------|------------------|
+| `default` | ✓ | prompts | prompts | persists |
+| `plan` | ✓ | ✗ | ✗ | N/A |
+| `acceptEdits` | ✓ | ✓ | prompts | persists |
+| `dontAsk` | ✓ | ✓ | ✓ | N/A |
+
+### Mode Descriptions
+
+- **default** — Prompts for approval before running any mutating tool (`writeEditFile`, `shell`). Once approved, the tool is allowed for the rest of the session.
+- **plan** — Read-only mode. Blocks all mutating tools. Useful for exploration and analysis.
+- **acceptEdits** — Auto-approves file editing operations (`writeEditFile`) but still prompts for shell commands.
+- **dontAsk** — Auto-approves all tools without prompting. Use with caution.
 
 ## Available Tools
 

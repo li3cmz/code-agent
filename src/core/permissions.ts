@@ -1,5 +1,5 @@
 /**
- * Permission system — basic gate for mutating tools.
+ * Permission system — mode-driven approvals.
  *
  * Stage 1: Basic prompt-before-mutate.
  * Stage 2: Full mode-driven approvals (default / plan / acceptEdits / dontAsk).
@@ -11,38 +11,60 @@ import type { Tool } from "./tool.js";
 export type PermissionMode = "default" | "plan" | "acceptEdits" | "dontAsk";
 
 /**
+ * Get the current effective mode (from STATE or override).
+ */
+export function getEffectiveMode(override?: PermissionMode): PermissionMode {
+  return override || STATE.mode;
+}
+
+/**
  * Check if a tool should be allowed to run.
  * Returns { allowed: true } or { allowed: false; reason: string }.
+ *
+ * Permission matrix:
+ * | Mode        | Read tools | writeEditFile | shell | Already approved |
+ * |-------------|------------|---------------|-------|------------------|
+ * | default     | ✓          | prompt        | prompt| ✓ (any tool)     |
+ * | plan        | ✓          | ✗             | ✗     | ✗                |
+ * | acceptEdits | ✓          | ✓             | prompt| ✓ (any tool)     |
+ * | dontAsk     | ✓          | ✓             | ✓     | ✓                |
  */
 export function checkPermission(
   tool: Tool,
-  mode: PermissionMode = STATE.planMode ? "plan" : "default"
+  mode?: PermissionMode
 ): { allowed: boolean; reason?: string } {
-  // In plan mode, block all mutations
-  if (mode === "plan" && tool.permission() === "mutate") {
-    return { allowed: false, reason: "Plan mode blocks all mutating tools" };
+  const effectiveMode = getEffectiveMode(mode);
+  const toolPerm = tool.permission();
+  const toolName = tool.name;
+
+  // Check if already approved for this session (any mode)
+  if (STATE.approvedTools.has(toolName)) {
+    return { allowed: true };
   }
 
   // In dontAsk mode, allow everything
-  if (mode === "dontAsk") {
+  if (effectiveMode === "dontAsk") {
     return { allowed: true };
   }
 
-  // In acceptEdits mode, allow edits automatically
-  if (mode === "acceptEdits" && tool.name === "writeEditFile") {
+  // In plan mode, block all mutations
+  if (effectiveMode === "plan") {
+    if (toolPerm === "mutate") {
+      return { allowed: false, reason: "Plan mode blocks all mutating tools" };
+    }
     return { allowed: true };
   }
 
-  // Default: check if already approved for this session
-  if (STATE.approvedTools.has(tool.name)) {
+  // In acceptEdits mode, auto-approve writeEditFile only
+  if (effectiveMode === "acceptEdits" && toolName === "writeEditFile") {
     return { allowed: true };
   }
 
   // Default mode: prompt for mutating tools
-  if (tool.permission() === "mutate") {
+  if (toolPerm === "mutate") {
     return {
       allowed: false,
-      reason: `requires approval: ${tool.name} is a mutating tool`,
+      reason: `requires approval: ${toolName} is a mutating tool`,
     };
   }
 
@@ -57,8 +79,46 @@ export function approveTool(toolName: string): void {
 }
 
 /**
+ * Revoke a tool's session-wide approval.
+ */
+export function revokeTool(toolName: string): void {
+  STATE.approvedTools.delete(toolName);
+}
+
+/**
+ * Revoke all session-wide approvals.
+ */
+export function revokeAllTools(): void {
+  STATE.approvedTools.clear();
+}
+
+/**
  * Set the permission mode.
  */
 export function setPermissionMode(mode: PermissionMode): void {
-  STATE.planMode = mode === "plan";
+  STATE.mode = mode;
+}
+
+/**
+ * Get current permission mode.
+ */
+export function getPermissionMode(): PermissionMode {
+  return STATE.mode;
+}
+
+/**
+ * Get mode display string for UI.
+ */
+export function getModeDisplay(): string {
+  const mode = STATE.mode;
+  switch (mode) {
+    case "plan":
+      return "[plan]";
+    case "acceptEdits":
+      return "[acceptEdits]";
+    case "dontAsk":
+      return "[yes]";
+    default:
+      return "";
+  }
 }

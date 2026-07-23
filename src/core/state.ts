@@ -6,6 +6,7 @@
  */
 
 import { loadProviderConfig } from "./provider.js";
+import type { PermissionMode } from "./permissions.js";
 
 /** Global application state. */
 class AppStateImpl {
@@ -18,13 +19,33 @@ class AppStateImpl {
   sessionId = `session-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
   turn = 0;
   maxTurns = 100;
-  planMode = false;
+
+  // Permission mode: default | plan | acceptEdits | dontAsk
+  private _mode: PermissionMode = "default";
+
+  get mode(): PermissionMode {
+    return this._mode;
+  }
+
+  set mode(value: PermissionMode) {
+    this._mode = value;
+  }
+
+  // Legacy support - planMode is now derived from mode
+  get planMode(): boolean {
+    return this._mode === "plan";
+  }
+
+  set planMode(value: boolean) {
+    this._mode = value ? "plan" : "default";
+  }
+
   approvedTools = new Set<string>();
 
   reset(): void {
     this.turn = 0;
     this.sessionId = `session-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-    this.planMode = false;
+    this._mode = "default";
     this.approvedTools.clear();
   }
 
