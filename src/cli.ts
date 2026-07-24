@@ -7,7 +7,7 @@
 import * as readline from "readline";
 import { loop } from "./core/loop.js";
 import { STATE } from "./core/state.js";
-import { approveTool, setPermissionMode, getPermissionMode, revokeTool, revokeAllTools, getModeDisplay, type PermissionMode } from "./core/permissions.js";
+import { approveTool, setPermissionMode, setTempPermissionMode, getPermissionMode, revokeTool, revokeAllTools, getModeDisplay, type PermissionMode } from "./core/permissions.js";
 import * as tools from "./tools/index.js";
 
 // Ensure tools are registered
@@ -44,11 +44,12 @@ Available commands:
   :quit, :exit    Exit the CLI
   :reset          Reset the session (clears mode and approvals)
   :plan           Enable plan mode (read-only, blocks all mutations)
-  :default       Switch to default mode (prompts for mutations)
-  :accept-edits  Auto-approve file edits, prompt for shell commands
-  :yes           Auto-approve all tools (dontAsk mode)
+  :default        Switch to default mode (prompts for mutations)
+  :accept-edits   Auto-approve file edits, prompt for shell commands
+  :yes            Auto-approve all tools (dontAsk mode)
+  :once <mode>    Set temporary mode for next request only (plan/default/accept-edits/yes)
   :status         Show current mode and approved tools
-  :revoke [tool] Revoke approval for a tool (or all if no arg)
+  :revoke [tool]  Revoke approval for a tool (or all if no arg)
 `);
 }
 
@@ -199,6 +200,27 @@ async function handleCommand(input: string): Promise<boolean> {
   if (cmd === ":revoke") {
     revokeAllTools();
     console.log("All tool approvals revoked.\n");
+    return true;
+  }
+
+  // :once <mode> - set temporary permission for one request only
+  if (cmd.startsWith(":once ")) {
+    const modeArg = input.slice(6).trim().toLowerCase();
+    const modeMap: Record<string, PermissionMode> = {
+      "plan": "plan",
+      "default": "default",
+      "acceptedits": "acceptEdits",
+      "accept-edits": "acceptEdits",
+      "yes": "dontAsk",
+      "dontask": "dontAsk",
+    };
+    const mode = modeMap[modeArg];
+    if (mode) {
+      setTempPermissionMode(mode);
+      console.log(`Temporary mode set: ${mode} (will be used for next request only)\n`);
+    } else {
+      console.log("Usage: :once <plan|default|accept-edits|yes>\n");
+    }
     return true;
   }
 

@@ -52,7 +52,7 @@ export function checkPermission(
     if (toolPerm === "mutate") {
       return { allowed: false, reason: "Plan mode blocks all mutating tools" };
     }
-    return { allowed: true };
+    return { all1owed: true };
   }
 
   // In acceptEdits mode, auto-approve writeEditFile only

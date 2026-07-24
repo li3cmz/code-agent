@@ -10,7 +10,7 @@
 import { getModelClient } from "./provider.js";
 import { toolRegistry, executeTool, type Tool } from "./tool.js";
 import { STATE } from "./state.js";
-import { checkPermission, type PermissionMode } from "./permissions.js";
+import { checkPermission, getEffectiveModeOnce, type PermissionMode } from "./permissions.js";
 import type { ChatMessage, Terminal } from "./messages.js";
 import { buildSystemPrompt } from "../prompts/system.js";
 
@@ -44,7 +44,13 @@ export type QueryYield =
 export async function* loop(options: QueryOptions): AsyncGenerator<QueryYield, Terminal, unknown> {
   const { userMessage, maxTurns = STATE.maxTurns, permissionMode = "default", onApprovalRequest, onTextChunk } = options;
 
+  // Get effective mode BEFORE reset (supports temporary one-shot mode)
+  const effectiveMode = permissionMode === "default"
+    ? getEffectiveModeOnce()
+    : permissionMode;
+
   const { client, model } = await getModelClient();
+
   STATE.reset();
 
   // Build message history - use OpenAI message format
@@ -136,7 +142,7 @@ export async function* loop(options: QueryOptions): AsyncGenerator<QueryYield, T
       }
 
       // Check permissions
-      const permission = checkPermission(tool, permissionMode);
+      const permission = checkPermission(tool, effectiveMode);
       if (!permission.allowed) {
         // Need user approval
         if (onApprovalRequest) {
