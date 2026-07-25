@@ -14,6 +14,56 @@ import { checkPermission, getEffectiveModeOnce, type PermissionMode } from "./pe
 import type { ChatMessage, Terminal } from "./messages.js";
 import { buildSystemPrompt } from "../prompts/system.js";
 
+/** Maximum retries for tool execution on validation error */
+const MAX_TOOL_RETRIES = 2;
+
+/**
+ * Execute a tool with retry on validation error.
+ * Returns the result and whether it's a retryable error.
+ */
+async function executeToolWithRetry(
+  toolName: string,
+  input: unknown,
+  context: { cwd: string }
+): Promise<{ result: { success: boolean; output: string; error?: string }; retries: number }> {
+  let retries = 0;
+
+  while (retries <= MAX_TOOL_RETRIES) {
+    const result = await executeTool(toolName, input, context);
+
+    // Success or non-validation error - return
+    if (result.success || !isValidationError(result.error)) {
+      return { result, retries };
+    }
+
+    // Validation error - retry
+    retries++;
+    if (retries <= MAX_TOOL_RETRIES) {
+      console.log(`  ⚠️  Tool ${toolName} validation failed (attempt ${retries}/${MAX_TOOL_RETRIES}): ${result.error}`);
+    }
+  }
+
+  // All retries exhausted - return last result
+  const finalResult = await executeTool(toolName, input, context);
+  return { result: finalResult, retries: MAX_TOOL_RETRIES };
+}
+
+/**
+ * Check if an error is a validation error (retryable).
+ */
+function isValidationError(error?: string): boolean {
+  if (!error) return false;
+  const validationPatterns = [
+    "Required",
+    "expected",
+    "received undefined",
+    "invalid",
+    "must be",
+    "schema",
+  ];
+  return validationPatterns.some((p) => error.toLowerCase().includes(p.toLowerCase()));
+}
+
 export interface QueryOptions {
   /** Initial user message. */
   userMessage: string;
@@ -166,7 +216,7 @@ export async function* loop(options: QueryOptions): AsyncGenerator<QueryYield, T
           }
         }
 
-        const result = await executeTool(tc.name, input, { cwd: STATE.cwd });
+        const { result } = await executeToolWithRetry(tc.name, input, { cwd: STATE.cwd });
         return { tc, result };
       })
     );
@@ -225,8 +275,8 @@ export async function* loop(options: QueryOptions): AsyncGenerator<QueryYield, T
         }
       }
 
-      // Execute the tool
-      const result = await executeTool(tc.name, input, { cwd: STATE.cwd });
+      // Execute the tool with retry
+      const { result } = await executeToolWithRetry(tc.name, input, { cwd: STATE.cwd });
       yield { type: "tool_result", tool: tc.name, result };
 
       messages.push({
