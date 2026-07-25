@@ -118,15 +118,71 @@ export async function* loop(options: QueryOptions): AsyncGenerator<QueryYield, T
       return { kind: "done", reason: "completed" };
     }
 
-    // Execute tool calls
-    for (const tc of toolCalls) {
+    // Parse tool inputs
+    const parsedToolCalls = toolCalls.map((tc) => {
       let input: unknown;
       try {
         input = JSON.parse(tc.arguments);
       } catch {
         input = {};
       }
+      return { tc, input };
+    });
 
+    // Separate into read (parallel) and mutate (serial) tool calls
+    const readCalls = parsedToolCalls.filter((p) => {
+      const tool = toolRegistry.get(p.tc.name);
+      return tool && tool.permission() === "read";
+    });
+    const mutateCalls = parsedToolCalls.filter((p) => {
+      const tool = toolRegistry.get(p.tc.name);
+      return !tool || tool.permission() === "mutate";
+    });
+
+    // Execute read tools in parallel
+    // First, yield tool_start for all read tools
+    for (const { tc, input } of readCalls) {
+      yield { type: "tool_start", tool: tc.name, input };
+    }
+
+    // Execute read tools in parallel
+    const readResults = await Promise.all(
+      readCalls.map(async ({ tc, input }) => {
+        const tool = toolRegistry.get(tc.name);
+        if (!tool) {
+          return { tc, result: { success: false, output: "", error: `Unknown tool: ${tc.name}` } };
+        }
+
+        // Check permissions for read tools (usually allowed, but check anyway)
+        const permission = checkPermission(tool, effectiveMode);
+        if (!permission.allowed) {
+          if (onApprovalRequest) {
+            const approved = await onApprovalRequest(tool, input);
+            if (!approved) {
+              return { tc, result: { success: false, output: "", error: "User denied permission" } };
+            }
+          } else {
+            return { tc, result: { success: false, output: "", error: permission.reason } };
+          }
+        }
+
+        const result = await executeTool(tc.name, input, { cwd: STATE.cwd });
+        return { tc, result };
+      })
+    );
+
+    // Yield tool_result for all read tools and add to messages
+    for (const { tc, result } of readResults) {
+      yield { type: "tool_result", tool: tc.name, result };
+      messages.push({
+        role: "tool",
+        content: result.success ? result.output : JSON.stringify({ error: result.error }),
+        tool_call_id: tc.id,
+      } as any);
+    }
+
+    // Execute mutate tools serially
+    for (const { tc, input } of mutateCalls) {
       yield { type: "tool_start", tool: tc.name, input };
 
       const tool = toolRegistry.get(tc.name);

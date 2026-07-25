@@ -18,6 +18,15 @@ export function getEffectiveMode(override?: PermissionMode): PermissionMode {
 }
 
 /**
+ * Get temporary permission mode once, then clear it (single-use).
+ * Returns temp mode if set, otherwise falls back to STATE.mode.
+ */
+export function getEffectiveModeOnce(): PermissionMode {
+  const tempMode = STATE.consumeTempMode();
+  return tempMode || STATE.mode;
+}
+
+/**
  * Check if a tool should be allowed to run.
  * Returns { allowed: true } or { allowed: false; reason: string }.
  *
@@ -52,7 +61,7 @@ export function checkPermission(
     if (toolPerm === "mutate") {
       return { allowed: false, reason: "Plan mode blocks all mutating tools" };
     }
-    return { all1owed: true };
+    return { allowed: true };
   }
 
   // In acceptEdits mode, auto-approve writeEditFile only
@@ -97,6 +106,14 @@ export function revokeAllTools(): void {
  */
 export function setPermissionMode(mode: PermissionMode): void {
   STATE.mode = mode;
+}
+
+/**
+ * Set a temporary permission mode (single-use).
+ * Will be consumed by getEffectiveModeOnce() and then cleared.
+ */
+export function setTempPermissionMode(mode: PermissionMode): void {
+  STATE.setTempMode(mode);
 }
 
 /**

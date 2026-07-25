@@ -221,7 +221,7 @@ Status values: `TODO` · `IN_PROGRESS` · `DONE` · `BLOCKED`
 | 0 | Scaffold + provider smoke test | DONE | 2026-07-22 | Scaffold DONE: package.json/tsconfig/.gitignore/.env(.example), src/core/{provider,messages}.ts, src/smoke.ts. Provider factory mirrors getAnthropicClient() pattern; Terminal union in messages.ts. Azure config: endpoint=https://huanglsh666-7029-resource.cognitiveservices.azure.com/openai/v1/, model=gpt-5-mini. Added zod-to-json-schema for tool schema conversion. |
 | 1 | Query loop + tools + CLI (MVP) | DONE | 2026-07-22 | Complete: query.ts async generator, tool.ts registry/executor, 4 tools (readFile/writeEditFile/shell/grep), permissions.ts (modes + session approvals), cli.ts REPL, README.md. Design aligns with CC ch05/ch06/ch01. |
 | 2 | Permission hardening | DONE | 2026-07-23 | Complete: STATE.mode field, checkPermission with full matrix, CLI commands (:default/:accept-edits/:yes/:status/:revoke), prompt shows mode, 15 tests pass. |
-| 3 | glob + web_fetch + concurrency | TODO | 2026-07-21 | |
+| 3 | glob + web_fetch + concurrency | DONE | 2026-07-24 | Complete: glob.ts, webFetch.ts tools added, concurrency implemented in loop.ts (read tools parallel, mutate tools serial). 18 tests pass. |
 | 4 | Two-layer state + cost | TODO | 2026-07-21 | |
 | 5 | Sub-agents / Tasks | TODO | 2026-07-21 | |
 | 6 | Memory (AGENTS.md/CLAUDE.md) | TODO | 2026-07-21 | |
