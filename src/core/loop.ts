@@ -145,22 +145,52 @@ export async function* loop(options: QueryOptions): AsyncGenerator<QueryYield, T
 
       if (delta?.tool_calls) {
         for (const tc of delta.tool_calls) {
-          if (!tc.id || !tc.function) continue;
+          // First chunk has id, subsequent chunks have index
+          const tcIndex = tc.index ?? 0;
+
+          // Try to find existing by id (first chunk) or index (subsequent chunks)
           let existing = toolCalls.find((t) => t.id === tc.id);
-          if (!existing) {
-            existing = { id: tc.id, name: tc.function.name || "", arguments: "" };
+          if (!existing && tc.id) {
+            // New tool call - create entry
+            existing = { id: tc.id, name: tc.function?.name || "", arguments: "" };
             toolCalls.push(existing);
+          } else if (!existing && tcIndex < toolCalls.length) {
+            // Use index for subsequent chunks (Azure OpenAI streams by index)
+            existing = toolCalls[tcIndex];
           }
-          if (tc.function.arguments) {
+
+          // Add arguments if present
+          if (existing && tc.function?.arguments) {
             existing.arguments += tc.function.arguments;
           }
         }
       }
     }
 
-    // Add assistant message to history
-    if (assistantMessage) {
-      messages.push({ role: "assistant", content: assistantMessage });
+    // Add assistant message to history (must include tool_calls if present)
+    if (assistantMessage || toolCalls.length > 0) {
+      const assistantMsg: {
+        role: "assistant";
+        content?: string;
+        tool_calls?: Array<{ id: string; type: string; function: { name: string; arguments: string } }>;
+      } = { role: "assistant" };
+
+      if (assistantMessage) {
+        assistantMsg.content = assistantMessage;
+      }
+
+      if (toolCalls.length > 0) {
+        assistantMsg.tool_calls = toolCalls.map((tc) => ({
+          id: tc.id,
+          type: "function",
+          function: {
+            name: tc.name,
+            arguments: tc.arguments,
+          },
+        }));
+      }
+
+      messages.push(assistantMsg);
     }
 
     // If no tool calls, we're done
@@ -228,6 +258,7 @@ export async function* loop(options: QueryOptions): AsyncGenerator<QueryYield, T
         role: "tool",
         content: result.success ? result.output : JSON.stringify({ error: result.error }),
         tool_call_id: tc.id,
+        name: tc.name,
       } as any);
     }
 
@@ -243,6 +274,7 @@ export async function* loop(options: QueryOptions): AsyncGenerator<QueryYield, T
           role: "tool",
           content: JSON.stringify(result),
           tool_call_id: tc.id,
+          name: tc.name,
         } as any);
         continue;
       }
@@ -260,6 +292,7 @@ export async function* loop(options: QueryOptions): AsyncGenerator<QueryYield, T
               role: "tool",
               content: JSON.stringify(result),
               tool_call_id: tc.id,
+              name: tc.name,
             } as any);
             continue;
           }
@@ -270,6 +303,7 @@ export async function* loop(options: QueryOptions): AsyncGenerator<QueryYield, T
             role: "tool",
             content: JSON.stringify(result),
             tool_call_id: tc.id,
+            name: tc.name,
           } as any);
           continue;
         }
@@ -283,6 +317,7 @@ export async function* loop(options: QueryOptions): AsyncGenerator<QueryYield, T
         role: "tool",
         content: result.success ? result.output : JSON.stringify({ error: result.error }),
         tool_call_id: tc.id,
+        name: tc.name,
       } as any);
     }
 
