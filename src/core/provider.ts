@@ -130,7 +130,7 @@ export async function getModelClient(cfg: ProviderConfig = loadProviderConfig())
 
   // Configure Azure OpenAI if endpoint is Azure-based
   if (cfg.azure) {
-    clientOptions.azure = cfg.azure;
+    (clientOptions as any).azure = cfg.azure;
   }
 
   const client = new OpenAI(clientOptions);

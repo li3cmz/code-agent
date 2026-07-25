@@ -7,6 +7,7 @@
 import * as readline from "readline";
 import { loop } from "./core/loop.js";
 import { STATE } from "./core/state.js";
+import { UI } from "./core/ui.js";
 import { approveTool, setPermissionMode, setTempPermissionMode, getPermissionMode, revokeTool, revokeAllTools, getModeDisplay, type PermissionMode } from "./core/permissions.js";
 import * as tools from "./tools/index.js";
 
@@ -50,6 +51,7 @@ Available commands:
   :once <mode>    Set temporary mode for next request only (plan/default/accept-edits/yes)
   :status         Show current mode and approved tools
   :revoke [tool]  Revoke approval for a tool (or all if no arg)
+  :cost            Show token usage and cost summary
 `);
 }
 
@@ -85,6 +87,14 @@ async function runAgent(userMessage: string) {
 
   let fullText = "";
 
+  // Subscribe to UI changes for real-time feedback
+  const unsub = UI.subscribe(() => {
+    const ui = UI.get();
+    if (ui.isToolRunning && ui.currentTool) {
+      process.stdout.write(`\r🔧 Running: ${ui.currentTool}...`);
+    }
+  });
+
   try {
     for await (const event of loop({
       userMessage,
@@ -107,10 +117,17 @@ async function runAgent(userMessage: string) {
         }
       } else if (event.type === "turn") {
         console.log(`\n--- Turn ${event.turn} ---`);
+      } else if (event.type === "turn_end") {
+        console.log(`\n  📊 Turn ${event.turn}: ${event.tokens.toLocaleString()} tokens | $${event.cost.toFixed(4)}`);
+      } else if (event.type === "usage") {
+        // Usage is shown in turn_end, but we keep this for completeness
+        console.log(`  💰 Tokens: ${event.totalTokens.toLocaleString()} | $${event.cost.toFixed(4)}`);
       }
     }
   } catch (err) {
     console.error("\n❌ Fatal error:", err);
+  } finally {
+    unsub();
   }
 }
 
@@ -200,6 +217,24 @@ async function handleCommand(input: string): Promise<boolean> {
   if (cmd === ":revoke") {
     revokeAllTools();
     console.log("All tool approvals revoked.\n");
+    return true;
+  }
+
+  if (cmd === ":cost") {
+    console.log("\n" + "=".repeat(40));
+    console.log("Token Usage & Cost Summary");
+    console.log("=".repeat(40));
+    console.log(STATE.getCostSummary());
+    console.log("");
+    console.log("Per-turn breakdown:");
+    if (STATE.turnCosts.length === 0) {
+      console.log("  (no turns completed)");
+    } else {
+      for (const tc of STATE.turnCosts) {
+        console.log(`  Turn ${tc.turn}: ${tc.totalTokens.toLocaleString()} tokens | $${tc.cost.toFixed(4)}`);
+      }
+    }
+    console.log("=".repeat(40) + "\n");
     return true;
   }
 

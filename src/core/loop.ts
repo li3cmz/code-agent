@@ -10,6 +10,7 @@
 import { getModelClient } from "./provider.js";
 import { toolRegistry, executeTool, type Tool } from "./tool.js";
 import { STATE } from "./state.js";
+import { UI } from "./ui.js";
 import { checkPermission, getEffectiveModeOnce, type PermissionMode } from "./permissions.js";
 import type { ChatMessage, Terminal } from "./messages.js";
 import { buildSystemPrompt } from "../prompts/system.js";
@@ -81,7 +82,9 @@ export type QueryYield =
   | { type: "text"; content: string }
   | { type: "tool_start"; tool: string; input: unknown }
   | { type: "tool_result"; tool: string; result: { success: boolean; output: string; error?: string } }
-  | { type: "turn"; turn: number };
+  | { type: "turn"; turn: number }
+  | { type: "usage"; promptTokens: number; completionTokens: number; totalTokens: number; cost: number }
+  | { type: "turn_end"; turn: number; tokens: number; cost: number };
 
 /**
  * Main query loop — async generator.
@@ -102,6 +105,7 @@ export async function* loop(options: QueryOptions): AsyncGenerator<QueryYield, T
   const { client, model } = await getModelClient();
 
   STATE.reset();
+  UI.reset();
 
   // Build message history - use OpenAI message format
   const messages: Array<{ role: string; content: string; tool_call_id?: string; name?: string }> = [
@@ -113,6 +117,7 @@ export async function* loop(options: QueryOptions): AsyncGenerator<QueryYield, T
 
   while (iterations < maxTurns) {
     STATE.nextTurn();
+    UI.setTurn(STATE.turn);
     yield { type: "turn", turn: STATE.turn };
 
     // Call the model
@@ -135,11 +140,14 @@ export async function* loop(options: QueryOptions): AsyncGenerator<QueryYield, T
     let toolCalls: Array<{ id: string; name: string; arguments: string }> = [];
 
     // Stream the response
+    let lastChunk: any = null;
     for await (const chunk of response) {
+      lastChunk = chunk;
       const delta = chunk.choices[0]?.delta;
       if (delta?.content) {
         assistantMessage += delta.content;
         onTextChunk?.(delta.content);
+        UI.appendText(delta.content);
         yield { type: "text", content: delta.content };
       }
 
@@ -167,17 +175,32 @@ export async function* loop(options: QueryOptions): AsyncGenerator<QueryYield, T
       }
     }
 
+    // Extract usage from last chunk (contains usage info for streaming)
+    if (lastChunk?.usage) {
+      STATE.addUsage(lastChunk.usage);
+      const cost = STATE.calculateCost(
+        lastChunk.usage.prompt_tokens ?? 0,
+        lastChunk.usage.completion_tokens ?? 0
+      );
+      yield {
+        type: "usage",
+        promptTokens: lastChunk.usage.prompt_tokens ?? 0,
+        completionTokens: lastChunk.usage.completion_tokens ?? 0,
+        totalTokens: lastChunk.usage.total_tokens ?? 0,
+        cost,
+      };
+    }
+
+    // Clear accumulated text for next response
+    UI.clearText();
+
     // Add assistant message to history (must include tool_calls if present)
     if (assistantMessage || toolCalls.length > 0) {
       const assistantMsg: {
         role: "assistant";
-        content?: string;
+        content: string;
         tool_calls?: Array<{ id: string; type: string; function: { name: string; arguments: string } }>;
-      } = { role: "assistant" };
-
-      if (assistantMessage) {
-        assistantMsg.content = assistantMessage;
-      }
+      } = { role: "assistant", content: assistantMessage || "" };
 
       if (toolCalls.length > 0) {
         assistantMsg.tool_calls = toolCalls.map((tc) => ({
@@ -222,6 +245,7 @@ export async function* loop(options: QueryOptions): AsyncGenerator<QueryYield, T
     // Execute read tools in parallel
     // First, yield tool_start for all read tools
     for (const { tc, input } of readCalls) {
+      UI.setCurrentTool(tc.name, input);
       yield { type: "tool_start", tool: tc.name, input };
     }
 
@@ -253,6 +277,7 @@ export async function* loop(options: QueryOptions): AsyncGenerator<QueryYield, T
 
     // Yield tool_result for all read tools and add to messages
     for (const { tc, result } of readResults) {
+      UI.clearCurrentTool();
       yield { type: "tool_result", tool: tc.name, result };
       messages.push({
         role: "tool",
@@ -264,6 +289,7 @@ export async function* loop(options: QueryOptions): AsyncGenerator<QueryYield, T
 
     // Execute mutate tools serially
     for (const { tc, input } of mutateCalls) {
+      UI.setCurrentTool(tc.name, input);
       yield { type: "tool_start", tool: tc.name, input };
 
       const tool = toolRegistry.get(tc.name);
@@ -287,6 +313,7 @@ export async function* loop(options: QueryOptions): AsyncGenerator<QueryYield, T
           const approved = await onApprovalRequest(tool, input);
           if (!approved) {
             const result = { success: false, output: "", error: "User denied permission" };
+            UI.clearCurrentTool();
             yield { type: "tool_result", tool: tc.name, result };
             messages.push({
               role: "tool",
@@ -298,6 +325,7 @@ export async function* loop(options: QueryOptions): AsyncGenerator<QueryYield, T
           }
         } else {
           const result = { success: false, output: "", error: permission.reason };
+          UI.clearCurrentTool();
           yield { type: "tool_result", tool: tc.name, result };
           messages.push({
             role: "tool",
@@ -311,6 +339,7 @@ export async function* loop(options: QueryOptions): AsyncGenerator<QueryYield, T
 
       // Execute the tool with retry
       const { result } = await executeToolWithRetry(tc.name, input, { cwd: STATE.cwd });
+      UI.clearCurrentTool();
       yield { type: "tool_result", tool: tc.name, result };
 
       messages.push({
@@ -320,6 +349,15 @@ export async function* loop(options: QueryOptions): AsyncGenerator<QueryYield, T
         name: tc.name,
       } as any);
     }
+
+    // Finalize turn cost
+    const turnCost = STATE.finalizeTurnCost();
+    yield {
+      type: "turn_end",
+      turn: STATE.turn,
+      tokens: turnCost.totalTokens,
+      cost: turnCost.cost,
+    };
 
     iterations++;
   }

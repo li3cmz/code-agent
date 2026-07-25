@@ -222,7 +222,7 @@ Status values: `TODO` · `IN_PROGRESS` · `DONE` · `BLOCKED`
 | 1 | Query loop + tools + CLI (MVP) | DONE | 2026-07-22 | Complete: query.ts async generator, tool.ts registry/executor, 4 tools (readFile/writeEditFile/shell/grep), permissions.ts (modes + session approvals), cli.ts REPL, README.md. Design aligns with CC ch05/ch06/ch01. |
 | 2 | Permission hardening | DONE | 2026-07-23 | Complete: STATE.mode field, checkPermission with full matrix, CLI commands (:default/:accept-edits/:yes/:status/:revoke), prompt shows mode, 15 tests pass. |
 | 3 | glob + web_fetch + concurrency | DONE | 2026-07-24 | Complete: glob.ts, webFetch.ts tools added, concurrency implemented in loop.ts (read tools parallel, mutate tools serial). 18 tests pass. |
-| 4 | Two-layer state + cost | TODO | 2026-07-21 | |
+| 4 | Two-layer state + cost | DONE | 2026-07-25 | Complete: STATE expanded with tokens, cost tracking, turnCosts array. Added ui.ts reactive store. loop.ts yields usage/turn_end events. CLI shows cost after each turn and :cost command. 41 tests pass. |
 | 5 | Sub-agents / Tasks | TODO | 2026-07-21 | |
 | 6 | Memory (AGENTS.md/CLAUDE.md) | TODO | 2026-07-21 | |
 | 7 | Hooks | TODO | 2026-07-21 | |
