@@ -6,7 +6,7 @@
  */
 
 import { z } from "zod";
-import { runSubAgent, type SubAgentResult } from "../core/tasks.js";
+import { runSubAgent, type SubAgentResult } from "../core/agent-runner.js";
 import { toolRegistry } from "../core/tool.js";
 import type { Tool, ToolResult, ToolContext } from "../core/tool.js";
 

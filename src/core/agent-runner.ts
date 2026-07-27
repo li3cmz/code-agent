@@ -15,7 +15,6 @@ import { loop, type QueryYield, type QueryOptions } from "./loop.js";
 import { toolRegistry } from "./tool.js";
 import { STATE } from "./state.js";
 import { buildSystemPrompt } from "../prompts/system.js";
-import type { Terminal } from "./messages.js";
 
 /** Result from a sub-agent execution. */
 export interface SubAgentResult {

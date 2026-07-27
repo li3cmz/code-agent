@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
-import { isToolAllowed } from "../src/core/tasks.js";
+import { isToolAllowed } from "../src/core/agent-runner.js";
 
 describe("Tasks / Sub-agents", () => {
   describe("isToolAllowed", () => {
