@@ -5,6 +5,29 @@
  * Yields typed messages. Returns a discriminated Terminal union.
  *
  * Mirrors Claude Code's query loop (ch05 Agent Loop).
+ *
+ * ============================================================================
+ * COMMON TOOL EXECUTION LOGIC (extracted, for reference)
+ * ============================================================================
+ * The following logic is duplicated in "Execute read tools" and "Execute mutate tools":
+ *
+ * 1. Set UI current tool: UI.setCurrentTool(tc.name, input)
+ * 2. Yield tool_start: yield { type: "tool_start", tool: tc.name, input }
+ * 3. Lookup tool: const tool = toolRegistry.get(tc.name)
+ * 4. If not found: yield error result, push to messages
+ * 5. Check permission: checkPermission(tool, permissionMode)
+ * 6. If not allowed:
+ *    - If onApprovalRequest: await onApprovalRequest(tool, input)
+ *    - If denied: yield error result, push to messages
+ *    - Else: yield permission.reason result
+ * 7. Execute tool: executeToolWithRetry(tc.name, input, { cwd: STATE.cwd })
+ * 8. Yield tool_result: yield { type: "tool_result", tool: tc.name, result }
+ * 9. Push to messages: { role: "tool", content: result.output/error, tool_call_id, name }
+ *
+ * Difference:
+ * - Read tools: executed in parallel, clearUI after all
+ * - Mutate tools: executed serially, clearUI after each
+ * ============================================================================
  */
 
 import { getModelClient } from "./provider.js";
