@@ -8,12 +8,14 @@
  */
 
 import { getModelClient } from "./provider.js";
-import { toolRegistry, executeTool, type Tool } from "./tool.js";
+import { toolRegistry, executeTool } from "./tool.js";
 import { STATE } from "./state.js";
 import { UI } from "./ui.js";
 import { checkPermission, getEffectiveModeOnce, type PermissionMode } from "./permissions.js";
 import type { ChatMessage, Terminal } from "./messages.js";
 import { buildSystemPrompt } from "../prompts/system.js";
+import { streamResponse } from "./streaming.js";
+import { parseToolCallArguments, type ToolCall } from "./tool-executor.js";
 
 /** Maximum retries for tool execution on validation error */
 const MAX_TOOL_RETRIES = 2;
@@ -73,9 +75,13 @@ export interface QueryOptions {
   /** Permission mode (defaults to 'default'). */
   permissionMode?: PermissionMode;
   /** Callback for user approval prompts. */
-  onApprovalRequest?: (tool: Tool, input: unknown) => Promise<boolean>;
+  onApprovalRequest?: (tool: any, input: unknown) => Promise<boolean>;
   /** Callback for streaming text chunks. */
   onTextChunk?: (chunk: string) => void;
+  /** Optional tool name filter for sub-agents */
+  allowedTools?: Set<string>;
+  /** Optional custom system prompt (for sub-agents) */
+  customSystemPrompt?: string;
 }
 
 export type QueryYield =
@@ -95,21 +101,30 @@ export type QueryYield =
  *   }
  */
 export async function* loop(options: QueryOptions): AsyncGenerator<QueryYield, Terminal, unknown> {
-  const { userMessage, maxTurns = STATE.maxTurns, permissionMode = "default", onApprovalRequest, onTextChunk } = options;
+  const {
+    userMessage,
+    maxTurns = STATE.maxTurns,
+    permissionMode: initialPermissionMode = "default",
+    onApprovalRequest,
+    onTextChunk,
+    allowedTools,
+    customSystemPrompt,
+  } = options;
 
   // Get effective mode BEFORE reset (supports temporary one-shot mode)
-  const effectiveMode = permissionMode === "default"
+  const effectiveMode = initialPermissionMode === "default"
     ? getEffectiveModeOnce()
-    : permissionMode;
+    : initialPermissionMode;
 
   const { client, model } = await getModelClient();
 
   STATE.reset();
   UI.reset();
 
-  // Build message history - use OpenAI message format
+  // Build message history - use custom or default system prompt
+  const systemPrompt = customSystemPrompt || buildSystemPrompt();
   const messages: Array<{ role: string; content: string; tool_call_id?: string; name?: string }> = [
-    { role: "system", content: buildSystemPrompt() },
+    { role: "system", content: systemPrompt },
     { role: "user", content: userMessage },
   ];
 
@@ -120,8 +135,13 @@ export async function* loop(options: QueryOptions): AsyncGenerator<QueryYield, T
     UI.setTurn(STATE.turn);
     yield { type: "turn", turn: STATE.turn };
 
+    // Get tool manifest (filtered for sub-agents)
+    const allTools = toolRegistry.getManifest();
+    const tools = allowedTools 
+      ? allTools.filter(t => allowedTools.has(t.name))
+      : allTools;
+
     // Call the model
-    const tools = toolRegistry.getManifest();
     const response = await client.chat.completions.create({
       model,
       messages: messages as any,
@@ -136,63 +156,25 @@ export async function* loop(options: QueryOptions): AsyncGenerator<QueryYield, T
       stream: true,
     });
 
+    // Stream the response using shared utility
+    let toolCalls: ToolCall[] = [];
     let assistantMessage = "";
-    let toolCalls: Array<{ id: string; name: string; arguments: string }> = [];
+    const { content } = await streamResponse(
+      response,
+      (text) => {
+        assistantMessage += text;
+        onTextChunk?.(text);
+        UI.appendText(text);
+        // We can't yield here directly - handle after stream completes
+      },
+      (tcs) => { toolCalls = tcs; }
+    );
+    assistantMessage = content;
 
-    // Stream the response
-    let lastChunk: any = null;
-    for await (const chunk of response) {
-      lastChunk = chunk;
-      const delta = chunk.choices[0]?.delta;
-      if (delta?.content) {
-        assistantMessage += delta.content;
-        onTextChunk?.(delta.content);
-        UI.appendText(delta.content);
-        yield { type: "text", content: delta.content };
-      }
-
-      if (delta?.tool_calls) {
-        for (const tc of delta.tool_calls) {
-          // First chunk has id, subsequent chunks have index
-          const tcIndex = tc.index ?? 0;
-
-          // Try to find existing by id (first chunk) or index (subsequent chunks)
-          let existing = toolCalls.find((t) => t.id === tc.id);
-          if (!existing && tc.id) {
-            // New tool call - create entry
-            existing = { id: tc.id, name: tc.function?.name || "", arguments: "" };
-            toolCalls.push(existing);
-          } else if (!existing && tcIndex < toolCalls.length) {
-            // Use index for subsequent chunks (Azure OpenAI streams by index)
-            existing = toolCalls[tcIndex];
-          }
-
-          // Add arguments if present
-          if (existing && tc.function?.arguments) {
-            existing.arguments += tc.function.arguments;
-          }
-        }
-      }
+    // Yield accumulated text
+    if (assistantMessage) {
+      yield { type: "text", content: assistantMessage };
     }
-
-    // Extract usage from last chunk (contains usage info for streaming)
-    if (lastChunk?.usage) {
-      STATE.addUsage(lastChunk.usage);
-      const cost = STATE.calculateCost(
-        lastChunk.usage.prompt_tokens ?? 0,
-        lastChunk.usage.completion_tokens ?? 0
-      );
-      yield {
-        type: "usage",
-        promptTokens: lastChunk.usage.prompt_tokens ?? 0,
-        completionTokens: lastChunk.usage.completion_tokens ?? 0,
-        totalTokens: lastChunk.usage.total_tokens ?? 0,
-        cost,
-      };
-    }
-
-    // Clear accumulated text for next response
-    UI.clearText();
 
     // Add assistant message to history (must include tool_calls if present)
     if (assistantMessage || toolCalls.length > 0) {
@@ -222,15 +204,10 @@ export async function* loop(options: QueryOptions): AsyncGenerator<QueryYield, T
     }
 
     // Parse tool inputs
-    const parsedToolCalls = toolCalls.map((tc) => {
-      let input: unknown;
-      try {
-        input = JSON.parse(tc.arguments);
-      } catch {
-        input = {};
-      }
-      return { tc, input };
-    });
+    const parsedToolCalls = toolCalls.map((tc) => ({
+      tc,
+      input: parseToolCallArguments(tc),
+    }));
 
     // Separate into read (parallel) and mutate (serial) tool calls
     const readCalls = parsedToolCalls.filter((p) => {
@@ -243,41 +220,53 @@ export async function* loop(options: QueryOptions): AsyncGenerator<QueryYield, T
     });
 
     // Execute read tools in parallel
-    // First, yield tool_start for all read tools
     for (const { tc, input } of readCalls) {
       UI.setCurrentTool(tc.name, input);
       yield { type: "tool_start", tool: tc.name, input };
-    }
 
-    // Execute read tools in parallel
-    const readResults = await Promise.all(
-      readCalls.map(async ({ tc, input }) => {
-        const tool = toolRegistry.get(tc.name);
-        if (!tool) {
-          return { tc, result: { success: false, output: "", error: `Unknown tool: ${tc.name}` } };
-        }
+      const tool = toolRegistry.get(tc.name);
+      if (!tool) {
+        const result = { success: false, output: "", error: `Unknown tool: ${tc.name}` };
+        yield { type: "tool_result", tool: tc.name, result };
+        messages.push({
+          role: "tool",
+          content: result.success ? result.output : JSON.stringify({ error: result.error }),
+          tool_call_id: tc.id,
+          name: tc.name,
+        } as any);
+        continue;
+      }
 
-        // Check permissions for read tools (usually allowed, but check anyway)
-        const permission = checkPermission(tool, effectiveMode);
-        if (!permission.allowed) {
-          if (onApprovalRequest) {
-            const approved = await onApprovalRequest(tool, input);
-            if (!approved) {
-              return { tc, result: { success: false, output: "", error: "User denied permission" } };
-            }
-          } else {
-            return { tc, result: { success: false, output: "", error: permission.reason } };
+      // Check permissions for read tools (usually allowed, but check anyway)
+      const permission = checkPermission(tool, effectiveMode);
+      if (!permission.allowed) {
+        if (onApprovalRequest) {
+          const approved = await onApprovalRequest(tool, input);
+          if (!approved) {
+            const result = { success: false, output: "", error: "User denied permission" };
+            yield { type: "tool_result", tool: tc.name, result };
+            messages.push({
+              role: "tool",
+              content: JSON.stringify(result),
+              tool_call_id: tc.id,
+              name: tc.name,
+            } as any);
+            continue;
           }
+        } else {
+          const result = { success: false, output: "", error: permission.reason };
+          yield { type: "tool_result", tool: tc.name, result };
+          messages.push({
+            role: "tool",
+            content: JSON.stringify(result),
+            tool_call_id: tc.id,
+            name: tc.name,
+          } as any);
+          continue;
         }
+      }
 
-        const { result } = await executeToolWithRetry(tc.name, input, { cwd: STATE.cwd });
-        return { tc, result };
-      })
-    );
-
-    // Yield tool_result for all read tools and add to messages
-    for (const { tc, result } of readResults) {
-      UI.clearCurrentTool();
+      const { result } = await executeToolWithRetry(tc.name, input, { cwd: STATE.cwd });
       yield { type: "tool_result", tool: tc.name, result };
       messages.push({
         role: "tool",
@@ -286,6 +275,9 @@ export async function* loop(options: QueryOptions): AsyncGenerator<QueryYield, T
         name: tc.name,
       } as any);
     }
+
+    // Clear current tool
+    UI.clearCurrentTool();
 
     // Execute mutate tools serially
     for (const { tc, input } of mutateCalls) {
