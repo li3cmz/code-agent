@@ -91,6 +91,24 @@ describe("Permission System", () => {
       const shellResult = checkPermission(mockShellTool);
       expect(shellResult.allowed).toBe(true);
     });
+
+    // Bubble mode tests (for sub-agents)
+    it("should allow read tools in bubble mode", () => {
+      setPermissionMode("bubble");
+      const result = checkPermission(mockReadTool);
+      expect(result.allowed).toBe(true);
+    });
+
+    it("should block mutating tools in bubble mode", () => {
+      setPermissionMode("bubble");
+      const writeResult = checkPermission(mockWriteTool);
+      expect(writeResult.allowed).toBe(false);
+      expect(writeResult.reason).toContain("sub-agent requires approval");
+
+      const shellResult = checkPermission(mockShellTool);
+      expect(shellResult.allowed).toBe(false);
+      expect(shellResult.reason).toContain("sub-agent requires approval");
+    });
   });
 
   describe("setPermissionMode", () => {
@@ -105,6 +123,9 @@ describe("Permission System", () => {
 
       setPermissionMode("dontAsk");
       expect(getPermissionMode()).toBe("dontAsk");
+
+      setPermissionMode("bubble");
+      expect(getPermissionMode()).toBe("bubble");
     });
   });
 
@@ -127,6 +148,11 @@ describe("Permission System", () => {
     it("should return [yes] for dontAsk mode", () => {
       setPermissionMode("dontAsk");
       expect(getModeDisplay()).toBe("[yes]");
+    });
+
+    it("should return [bubble] for bubble mode", () => {
+      setPermissionMode("bubble");
+      expect(getModeDisplay()).toBe("[bubble]");
     });
   });
 

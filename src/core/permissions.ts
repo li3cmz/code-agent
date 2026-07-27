@@ -8,7 +8,7 @@
 import { STATE } from "./state.js";
 import type { Tool } from "./tool.js";
 
-export type PermissionMode = "default" | "plan" | "acceptEdits" | "dontAsk";
+export type PermissionMode = "default" | "plan" | "acceptEdits" | "dontAsk" | "bubble";
 
 /**
  * Get the current effective mode (from STATE or override).
@@ -37,6 +37,10 @@ export function getEffectiveModeOnce(): PermissionMode {
  * | plan        | ✓          | ✗             | ✗     | ✗                |
  * | acceptEdits | ✓          | ✓             | prompt| ✓ (any tool)     |
  * | dontAsk     | ✓          | ✓             | ✓     | ✓                |
+ * | bubble      | ✓          | prompt        | prompt| prompt (all need parent approval) |
+ *
+ * Bubble mode is used for sub-agents: they can request approval but cannot self-approve
+ * any mutations - all must bubble up to the parent agent for approval.
  */
 export function checkPermission(
   tool: Tool,
@@ -53,6 +57,18 @@ export function checkPermission(
 
   // In dontAsk mode, allow everything
   if (effectiveMode === "dontAsk") {
+    return { allowed: true };
+  }
+
+  // In bubble mode (sub-agents), require approval for all mutations
+  // The approval request bubbles up to the parent agent
+  if (effectiveMode === "bubble") {
+    if (toolPerm === "mutate") {
+      return {
+        allowed: false,
+        reason: `sub-agent requires approval: ${toolName} is a mutating tool`,
+      };
+    }
     return { allowed: true };
   }
 
@@ -135,6 +151,8 @@ export function getModeDisplay(): string {
       return "[acceptEdits]";
     case "dontAsk":
       return "[yes]";
+    case "bubble":
+      return "[bubble]";
     default:
       return "";
   }
