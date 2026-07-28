@@ -5,6 +5,7 @@
  */
 
 import { toolRegistry } from "../core/tool.js";
+import { getMemoryContext } from "../core/memory.js";
 
 export function buildSystemPrompt(): string {
   const tools = toolRegistry.getManifest();
@@ -17,6 +18,9 @@ ${t.description}
 Arguments: ${JSON.stringify(t.input_schema, null, 2)}`
     )
     .join("\n\n");
+
+  // Get memory context from loaded memory files
+  const memoryContext = getMemoryContext();
 
   return `You are Code Agent, a CLI assistant that helps users with software development tasks.
 
@@ -35,5 +39,8 @@ ${toolDescriptions || "No tools available."}
 - The working directory is: ${process.cwd()}
 - Prefer using tools over describing what you would do
 - Be concise and practical in your responses
-- If a tool fails, explain the error and suggest alternatives`;
+- If a tool fails, explain the error and suggest alternatives${memoryContext}
+
+## Project Context (from memory files)
+${memoryContext || "(No memory files loaded)"}`;
 }

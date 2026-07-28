@@ -7,6 +7,7 @@
 
 import { loadProviderConfig } from "./provider.js";
 import type { PermissionMode } from "./permissions.js";
+import type { MemoryFile } from "./memory.js";
 
 /** Token usage for a single turn. */
 export interface TokenUsage {
@@ -179,6 +180,13 @@ class AppStateImpl {
   }
 
   approvedTools = new Set<string>();
+
+  // ==========================================
+  // Memory (loaded from AGENTS.md / CLAUDE.md)
+  // ==========================================
+
+  /** Loaded memory files for project context. */
+  memoryFiles: MemoryFile[] = [];
 
   // ==========================================
   // Layer 2: Reactive UI State

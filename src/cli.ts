@@ -9,10 +9,14 @@ import { loop } from "./core/loop.js";
 import { STATE } from "./core/state.js";
 import { UI } from "./core/ui.js";
 import { approveTool, setPermissionMode, setTempPermissionMode, getPermissionMode, revokeTool, revokeAllTools, getModeDisplay, type PermissionMode } from "./core/permissions.js";
+import { loadMemory, getMemoryInfo } from "./core/memory.js";
 import * as tools from "./tools/index.js";
 
 // Ensure tools are registered
 void tools;
+
+// Load memory files at startup
+loadMemory();
 
 // Create readline interface
 const rl = readline.createInterface({
@@ -51,7 +55,8 @@ Available commands:
   :once <mode>    Set temporary mode for next request only (plan/default/accept-edits/yes)
   :status         Show current mode and approved tools
   :revoke [tool]  Revoke approval for a tool (or all if no arg)
-  :cost            Show token usage and cost summary
+  :cost           Show token usage and cost summary
+  :memory         Show loaded memory files (AGENTS.md/CLAUDE.md)
 `);
 }
 
@@ -234,6 +239,15 @@ async function handleCommand(input: string): Promise<boolean> {
         console.log(`  Turn ${tc.turn}: ${tc.totalTokens.toLocaleString()} tokens | $${tc.cost.toFixed(4)}`);
       }
     }
+    console.log("=".repeat(40) + "\n");
+    return true;
+  }
+
+  if (cmd === ":memory") {
+    console.log("\n" + "=".repeat(40));
+    console.log("Memory Files");
+    console.log("=".repeat(40));
+    console.log(getMemoryInfo());
     console.log("=".repeat(40) + "\n");
     return true;
   }

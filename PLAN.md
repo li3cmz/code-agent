@@ -224,7 +224,7 @@ Status values: `TODO` · `IN_PROGRESS` · `DONE` · `BLOCKED`
 | 3 | glob + web_fetch + concurrency | DONE | 2026-07-24 | Complete: glob.ts, webFetch.ts tools added, concurrency implemented in loop.ts (read tools parallel, mutate tools serial). 18 tests pass. |
 | 4 | Two-layer state + cost | DONE | 2026-07-25 | Complete: STATE expanded with tokens, cost tracking, turnCosts array. Added ui.ts reactive store. loop.ts yields usage/turn_end events. CLI shows cost after each turn and :cost command. 41 tests pass. |
 | 5 | Sub-agents / Tasks | DONE | 2026-07-25 | Complete: tasks.ts with runSubAgent(), bubble permission mode, agent tool. 46 tests pass. |
-| 6 | Memory (AGENTS.md/CLAUDE.md) | TODO | 2026-07-21 | |
+| 6 | Memory (AGENTS.md/CLAUDE.md) | DONE | 2026-07-28 | Complete: memory.ts with scanMemoryFiles, loadMemory, buildMemoryContext, getMemoryInfo. Frontmatter parsing, walks up to repo root (.git), :memory CLI command. 56 tests pass. |
 | 7 | Hooks | TODO | 2026-07-21 | |
 | 8 | (Optional) Agent Service + Entra ID | TODO | 2026-07-21 | Deferred. |
 | 9 | Migrate to Azure AI Foundry Agent | TODO | 2026-07-22 | DEFERRED - Will implement after all other stages complete. Using direct model deployment currently. |
